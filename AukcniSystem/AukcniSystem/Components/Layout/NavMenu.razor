@@ -1,10 +1,9 @@
 ﻿@implements IDisposable
-
 @inject NavigationManager NavigationManager
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">AukcniSystem</a>
+        <a class="navbar-brand" href="">Aukční Systém</a>
     </div>
 </div>
 
@@ -12,56 +11,99 @@
 
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
     <nav class="nav flex-column">
+
+        @* VEŘEJNÉ / SPOLEČNÉ POLOŽKY *@
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="auth">
-                <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Auth Required
+                <span class="bi bi-house-door-fill" aria-hidden="true"></span> Hlavní stránka
             </NavLink>
         </div>
 
         <AuthorizeView>
             <Authorized>
+                @* SEKCE PRO KLIENTA (Přihození, Nová aukce) *@
+                <AuthorizeView Roles="Klient" Context="innerContext">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="new-auction">
+                            <span class="bi bi-plus-circle-fill" aria-hidden="true"></span> Založit aukci
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @* SEKCE PRO ADMINA *@
+                <AuthorizeView Roles="Admin" Context="innerContext">
+                    <div class="nav-item px-3 pt-3 text-uppercase text-secondary" style="font-size: 0.7rem;">
+                        <span class="ps-2">Administrace</span>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="admin/categories">
+                            <span class="bi bi-tags-fill" aria-hidden="true"></span> Kategorie
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="admin/users">
+                            <span class="bi bi-people-fill" aria-hidden="true"></span> Správa uživatelů
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="admin/cleanup">
+                            <span class="bi bi-trash-fill" aria-hidden="true"></span> Smazat ukončené
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @* SEKCE PRO ÚČETNÍHO *@
+                <AuthorizeView Roles="Ucetni" Context="innerContext">
+                    <div class="nav-item px-3 pt-3 text-uppercase text-secondary" style="font-size: 0.7rem;">
+                        <span class="ps-2">Účetnictví</span>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="accountant/payments">
+                            <span class="bi bi-cash-coin" aria-hidden="true"></span> Připsat peníze
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                @* SEKCE PRO SUPERVIZORA *@
+                <AuthorizeView Roles="Supervisor" Context="innerContext">
+                    <div class="nav-item px-3 pt-3 text-uppercase text-secondary" style="font-size: 0.7rem;">
+                        <span class="ps-2">Dozor</span>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="supervisor/approvals">
+                            <span class="bi bi-check-circle-fill" aria-hidden="true"></span> Schvalování aukcí
+                        </NavLink>
+                    </div>
+                </AuthorizeView>
+
+                <hr class="text-white mx-3" />
+
+                @* PROFIL A ODHLÁŠENÍ *@
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Manage">
-                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> @context.User.Identity?.Name
+                        <span class="bi bi-person-fill" aria-hidden="true"></span> @context.User.Identity?.Name
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
                     <form action="Account/Logout" method="post">
                         <AntiforgeryToken />
                         <input type="hidden" name="ReturnUrl" value="@currentUrl" />
-                        <button type="submit" class="nav-link">
-                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
+                        <button type="submit" class="nav-link w-100 text-start bg-transparent border-0">
+                            <span class="bi bi-arrow-bar-left" aria-hidden="true"></span> Odhlásit se
                         </button>
                     </form>
                 </div>
             </Authorized>
+
             <NotAuthorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Register">
-                        <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Register
+                        <span class="bi bi-person-plus-fill" aria-hidden="true"></span> Registrace
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Login">
-                        <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Login
+                        <span class="bi bi-box-arrow-in-right" aria-hidden="true"></span> Přihlášení
                     </NavLink>
                 </div>
             </NotAuthorized>
@@ -89,4 +131,3 @@
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
 }
-

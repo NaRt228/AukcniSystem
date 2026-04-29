@@ -1,0 +1,182 @@
+﻿@page "/admin/users"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using AukcniSystem.Data
+@attribute [Authorize(Roles = "Admin")]
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<div class="container">
+    <h3 class="mb-4">Správa uživatelů</h3>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-info">@statusMessage</div>
+    }
+
+    @* FORMULÁŘ PRO PŘIDÁNÍ / EDITACI *@
+    <div class="card mb-4">
+        <div class="card-header">
+            @(isEditing ? "Editace uživatele" : "Nový uživatel")
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" @bind="userModel.Email" disabled="@isEditing" />
+                </div>
+                @if (!isEditing)
+                {
+                    <div class="col-md-4">
+                        <label class="form-label">Heslo</label>
+                        <input type="password" class="form-control" @bind="userModel.Password" />
+                    </div>
+                }
+                <div class="col-md-4">
+                    <label class="form-label">Role</label>
+                    <select class="form-select" @bind="userModel.SelectedRole">
+                        @foreach (var role in allRoles)
+                        {
+                            <option value="@role">@role</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-primary" @onclick="SaveUser">
+                        @(isEditing ? "Uložit změny" : "Vytvořit uživatele")
+                    </button>
+                    @if (isEditing)
+                    {
+                        <button class="btn btn-secondary ms-2" @onclick="CancelEdit">Zrušit</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* TABULKA UŽIVATELŮ *@
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Zůstatek</th>
+                <th class="text-end">Akce</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in userList)
+            {
+                <tr>
+                    <td>@user.Email</td>
+                    <td>@string.Join(", ", user.Roles)</td>
+                    <td>@user.Balance CZK</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-warning" @onclick="() => StartEdit(user)">Editovat</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<UserDisplayModel> userList = new();
+    private List<string> allRoles = new();
+    private UserInputModel userModel = new();
+    private bool isEditing = false;
+    private string? editingUserId;
+    private string statusMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        allRoles = await RoleManager.Roles.Select(r => r.Name!).ToListAsync();
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        var users = await UserManager.Users.ToListAsync();
+        userList.Clear();
+        foreach (var u in users)
+        {
+            var roles = await UserManager.GetRolesAsync(u);
+            userList.Add(new UserDisplayModel
+            {
+                Id = u.Id,
+                Email = u.Email!,
+                Roles = roles.ToList(),
+                Balance = u.VirtualBalance
+            });
+        }
+    }
+
+    private async Task SaveUser()
+    {
+        if (isEditing)
+        {
+            // LOGIKA EDITACE (Změna role)
+            var user = await UserManager.FindByIdAsync(editingUserId!);
+            if (user != null)
+            {
+                var currentRoles = await UserManager.GetRolesAsync(user);
+                await UserManager.RemoveFromRolesAsync(user, currentRoles);
+                await UserManager.AddToRoleAsync(user, userModel.SelectedRole);
+                statusMessage = "Role byla upravena.";
+            }
+        }
+        else
+        {
+            // LOGIKA VYTVOŘENÍ
+            var user = new ApplicationUser { UserName = userModel.Email, Email = userModel.Email, EmailConfirmed = true };
+            var result = await UserManager.CreateAsync(user, userModel.Password);
+
+            if (result.Succeeded)
+            {
+                await UserManager.AddToRoleAsync(user, userModel.SelectedRole);
+                statusMessage = "Uživatel byl vytvořen.";
+            }
+            else
+            {
+                statusMessage = "Chyba: " + string.Join(", ", result.Errors.Select(e => e.Description));
+            }
+        }
+
+        userModel = new();
+        isEditing = false;
+        await LoadUsers();
+    }
+
+    private void StartEdit(UserDisplayModel user)
+    {
+        isEditing = true;
+        editingUserId = user.Id;
+        userModel.Email = user.Email;
+        userModel.SelectedRole = user.Roles.FirstOrDefault() ?? "Klient";
+    }
+
+    private void CancelEdit()
+    {
+        isEditing = false;
+        userModel = new();
+    }
+
+    // Pomocné modely
+    public class UserDisplayModel
+    {
+        public string Id { get; set; } = "";
+        public string Email { get; set; } = "";
+        public List<string> Roles { get; set; } = new();
+        public decimal Balance { get; set; }
+    }
+
+    public class UserInputModel
+    {
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string SelectedRole { get; set; } = "Klient";
+    }
+}

@@ -1,0 +1,122 @@
+﻿@page "/admin/categories"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@attribute [Authorize(Roles = "Admin")]
+@inject ApplicationDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Správa kategorií</PageTitle>
+
+<div class="container">
+    <h3 class="mb-4">Správa kategorií</h3>
+
+    @* Formulář pro přidání *@
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Přidat novou kategorii</h5>
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Název kategorie" @bind="newCategoryName" />
+                <button class="btn btn-primary" @onclick="AddCategory">Přidat</button>
+            </div>
+        </div>
+    </div>
+
+    @* Seznam kategorií *@
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Název</th>
+                <th class="text-end">Akce</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var cat in categories)
+            {
+                <tr>
+                    <td>@cat.Id</td>
+                    <td>
+                        @if (editingId == cat.Id)
+                        {
+                            <input type="text" class="form-control" @bind="editingName" @onblur="SaveEdit" />
+                        }
+                        else
+                        {
+                            @cat.Name
+                        }
+                    </td>
+                    <td class="text-end">
+                        @if (editingId == cat.Id)
+                        {
+                            <button class="btn btn-sm btn-success" @onclick="SaveEdit">Uložit</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-warning me-2" @onclick="() => StartEdit(cat)">Upravit</button>
+                        }
+                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteCategory(cat.Id)">Smazat</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<Category> categories = new();
+    private string newCategoryName = "";
+    private int? editingId;
+    private string editingName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategories();
+    }
+
+    private async Task LoadCategories()
+    {
+        categories = await DbContext.Categories.ToListAsync();
+    }
+
+    private async Task AddCategory()
+    {
+        if (string.IsNullOrWhiteSpace(newCategoryName)) return;
+
+        DbContext.Categories.Add(new Category { Name = newCategoryName });
+        await DbContext.SaveChangesAsync();
+        newCategoryName = "";
+        await LoadCategories();
+    }
+
+    private void StartEdit(Category cat)
+    {
+        editingId = cat.Id;
+        editingName = cat.Name;
+    }
+
+    private async Task SaveEdit()
+    {
+        if (editingId == null) return;
+        var cat = await DbContext.Categories.FindAsync(editingId);
+        if (cat != null)
+        {
+            cat.Name = editingName;
+            await DbContext.SaveChangesAsync();
+        }
+        editingId = null;
+        await LoadCategories();
+    }
+
+    private async Task DeleteCategory(int id)
+    {
+        var cat = await DbContext.Categories.FindAsync(id);
+        if (cat != null)
+        {
+            DbContext.Categories.Remove(cat);
+            await DbContext.SaveChangesAsync();
+            await LoadCategories();
+        }
+    }
+}
