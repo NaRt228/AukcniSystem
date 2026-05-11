@@ -1,0 +1,68 @@
+﻿@page "/add-funds"
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@attribute [Authorize(Roles = "Klient")]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserManager<ApplicationUser> UserManager
+@rendermode InteractiveServer
+
+<div class="container">
+    <h3>Dobít virtuální účet</h3>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5>Aktuální zůstatek: <strong>@currentBalance CZK</strong></h5>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Vytvořit žádost o dobití</div>
+        <div class="card-body">
+            <div class="input-group mb-3">
+                <input type="number" class="form-control" @bind="amountToRequest" placeholder="Částka v CZK" />
+                <button class="btn btn-success" @onclick="SendRequest">Odeslat žádost</button>
+            </div>
+            @if (!string.IsNullOrEmpty(message))
+            {
+                <p class="text-success">@message</p>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private decimal currentBalance;
+    private decimal amountToRequest;
+    private string message = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        currentBalance = user?.VirtualBalance ?? 0;
+    }
+
+    private async Task SendRequest()
+    {
+        if (amountToRequest <= 0) return;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = UserManager.GetUserId(authState.User);
+
+        var request = new BalanceRequest
+        {
+            Amount = amountToRequest,
+            UserId = userId!,
+            IsApproved = null // Čeká na schválení
+        };
+
+        DbContext.BalanceRequests.Add(request);
+        await DbContext.SaveChangesAsync();
+
+        message = "Žádost byla odeslána účetnímu ke schválení.";
+        amountToRequest = 0;
+    }
+}

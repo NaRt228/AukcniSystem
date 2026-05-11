@@ -1,0 +1,203 @@
+﻿@page "/new-auction"
+
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using AukcniSystem.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+@* DŮLEŽITÉ: Zapne interaktivitu pro nahrávání souborů a formulář *@
+@rendermode InteractiveServer
+@attribute [Authorize(Roles = "Klient")]
+
+@inject ApplicationDbContext Context
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthProvider
+@inject IWebHostEnvironment Environment
+@inject NavigationManager Navigation
+
+<PageTitle>Vytvořit aukci</PageTitle>
+
+<div class="container mt-4">
+    <h3>Vytvořit novou aukci</h3>
+
+    <EditForm Model="model" OnValidSubmit="CreateAuction" FormName="CreateAuctionForm">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" />
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label class="form-label font-weight-bold">Název aukce</label>
+                    <InputText class="form-control" @bind-Value="model.Title" />
+                    <ValidationMessage For="@(() => model.Title)" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Popis zboží</label>
+                    <InputTextArea class="form-control" @bind-Value="model.Description" rows="4" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Kategorie</label>
+                    <InputSelect class="form-select" @bind-Value="model.CategoryId">
+                        <option value="0">-- Vyber kategorii --</option>
+                        @foreach (var cat in categories)
+                        {
+                            <option value="@cat.Id">@cat.Name</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="@(() => model.CategoryId)" />
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label class="form-label">Vyvolávací cena (CZK)</label>
+                    <InputNumber class="form-control" @bind-Value="model.StartingPrice" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Doba trvání (v hodinách)</label>
+                    <InputNumber class="form-control" @bind-Value="model.DurationHours" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Adresa vyzvednutí / lokace</label>
+                    <InputText class="form-control" @bind-Value="model.Address" />
+                </div>
+            </div>
+        </div>
+
+        <hr />
+
+        <div class="card p-3 bg-light mb-3">
+            <h5>Nastavení příhozů</h5>
+            <div class="form-check mb-2">
+                <InputCheckbox class="form-check-input" id="checkPercent" @bind-Value="model.IsPercentageStep" />
+                <label class="form-check-label" for="checkPercent">
+                    Minimální příhoz je v procentech (ne v CZK)
+                </label>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Hodnota minimálního příhozu</label>
+                <InputNumber class="form-control" @bind-Value="model.MinStepValue" />
+                <small class="text-muted">Pokud je zaškrtnuto výše, zadejte např. 5 pro 5%.</small>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Fotografie zboží</label>
+            <InputFile OnChange="HandleFileUpload" class="form-control" accept=".jpg,.jpeg,.png" />
+
+            @if (!string.IsNullOrEmpty(model.ImagePath))
+            {
+                <div class="mt-2">
+                    <img src="@model.ImagePath" width="200" class="img-thumbnail" />
+                </div>
+            }
+        </div>
+
+        <button type="submit" class="btn btn-success btn-lg">Odeslat ke schválení</button>
+    </EditForm>
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert alert-info mt-3">
+            @message
+        </div>
+    }
+</div>
+
+@code {
+    // DŮLEŽITÉ: SupplyParameterFromForm zajistí, že se data z inputů neztratí
+    [SupplyParameterFromForm]
+    private CreateAuctionDto model { get; set; } = new();
+
+    private List<Category> categories = new();
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Context.Categories.ToListAsync();
+
+        // Nastavení výchozích hodnot, pokud je model nový
+        if (model.DurationHours == 0) model.DurationHours = 24;
+        if (model.MinStepValue == 0) model.MinStepValue = 10;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            var extension = Path.GetExtension(file.Name).ToLower();
+            var fileName = $"{Guid.NewGuid()}{extension}";
+            var uploadFolder = Path.Combine(Environment.WebRootPath, "uploads");
+
+            if (!Directory.Exists(uploadFolder)) Directory.CreateDirectory(uploadFolder);
+
+            var fullPath = Path.Combine(uploadFolder, fileName);
+
+            // Omezení velikosti na 5MB
+            await using FileStream fs = new(fullPath, FileMode.Create);
+            await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(fs);
+
+            model.ImagePath = $"/uploads/{fileName}";
+            StateHasChanged(); // Vynutí překreslení obrázku
+        }
+        catch (Exception ex)
+        {
+            message = $"Chyba při nahrávání: {ex.Message}";
+        }
+    }
+
+    private async Task CreateAuction()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+
+        if (user == null)
+        {
+            message = "Chyba: Uživatel nebyl nalezen.";
+            return;
+        }
+
+        if (model.CategoryId <= 0)
+        {
+            message = "Prosím vyberte kategorii.";
+            return;
+        }
+
+        var auction = new Auction
+        {
+            Title = model.Title,
+            Description = model.Description,
+            StartingPrice = model.StartingPrice,
+            CurrentPrice = model.StartingPrice,
+            Address = model.Address,
+            DurationHours = model.DurationHours,
+            CategoryId = model.CategoryId,
+            IsPercentageStep = model.IsPercentageStep,
+            MinStepValue = model.MinStepValue,
+            ImagePath = model.ImagePath,
+            SellerId = user.Id,
+            IsApproved = false, // Čeká na Supervizora
+            IsDeleted = false
+        };
+
+        Context.Auctions.Add(auction);
+        await Context.SaveChangesAsync();
+
+        message = "Aukce byla úspěšně vytvořena a nyní čeká na schválení supervizorem.";
+
+        // Reset modelu po úspěchu
+        model = new CreateAuctionDto();
+    }
+}

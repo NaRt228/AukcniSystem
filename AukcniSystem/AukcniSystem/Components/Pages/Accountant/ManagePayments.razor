@@ -1,0 +1,74 @@
+﻿@page "/accountant/payments"
+@attribute [Authorize(Roles = "Ucetni")]
+@inject ApplicationDbContext DbContext
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+
+<div class="container">
+    <h3>Žádosti o připsání peněz</h3>
+
+    <table class="table table-hover mt-4">
+        <thead>
+            <tr>
+                <th>Datum</th>
+                <th>Uživatel</th>
+                <th>Částka</th>
+                <th class="text-end">Akce</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var req in pendingRequests)
+            {
+                <tr>
+                    <td>@req.RequestedAt.ToString("g")</td>
+                    <td>@req.User.Email</td>
+                    <td>@req.Amount CZK</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-success me-2" @onclick="() => HandleRequest(req, true)">Schválit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => HandleRequest(req, false)">Zamítnout</button>
+                    </td>
+                </tr>
+            }
+            @if (!pendingRequests.Any())
+            {
+                <tr><td colspan="4" class="text-center text-muted">Žádné nevyřízené žádosti</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<BalanceRequest> pendingRequests = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRequests();
+    }
+
+    private async Task LoadRequests()
+    {
+        pendingRequests = await DbContext.BalanceRequests
+            .Include(r => r.User)
+            .Where(r => r.IsApproved == null)
+            .OrderByDescending(r => r.RequestedAt)
+            .ToListAsync();
+    }
+
+    private async Task HandleRequest(BalanceRequest request, bool approve)
+    {
+        request.IsApproved = approve;
+        request.HandledAt = DateTime.Now;
+
+        if (approve)
+        {
+            // Tady proběhne to reálné připsání na účet uživatele
+            request.User.VirtualBalance += request.Amount;
+        }
+
+        await DbContext.SaveChangesAsync();
+        await LoadRequests(); // Refresh seznamu
+    }
+}

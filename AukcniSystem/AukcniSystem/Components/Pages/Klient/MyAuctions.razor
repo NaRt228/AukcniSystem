@@ -1,0 +1,164 @@
+﻿@page "/my-auctions"
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+@attribute [Authorize(Roles = "Klient")]
+@rendermode InteractiveServer
+
+@inject ApplicationDbContext Context
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Moje aukce</PageTitle>
+
+<div class="container mt-4">
+    <h3 class="mb-4">Přehled mých aukcí</h3>
+
+    @if (myAuctions == null)
+    {
+        <div class="d-flex justify-content-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Načítání...</span>
+            </div>
+        </div>
+    }
+    else if (!myAuctions.Any())
+    {
+        <div class="alert alert-info">
+            Zatím jste nevytvořil(a) žádnou aukci. <a href="/new-auction">Vytvořit první aukci</a>.
+        </div>
+    }
+    else
+    {
+        @* --- SEKCE: ČEKÁ NA SCHVÁLENÍ --- *@
+        <h4 class="text-warning mb-3"><i class="bi bi-clock-history"></i> Čekající na schválení</h4>
+        <div class="row mb-5">
+            @foreach (var a in myAuctions.Where(x => !x.IsApproved && !x.IsDeleted))
+            {
+                <div class="col-md-4 mb-3">
+                    <div class="card border-warning h-100 opacity-75">
+                        <div class="card-body">
+                            <h5 class="card-title">@a.Title</h5>
+                            <p class="card-text text-muted small">@a.Description</p>
+                            <span class="badge bg-warning text-dark">Status: Čeká na supervizora</span>
+                        </div>
+                    </div>
+                </div>
+            }
+            @if (!myAuctions.Any(x => !x.IsApproved && !x.IsDeleted))
+            {
+                <p class="text-muted ms-3 small">Žádné aukce nečekají na schválení.</p>
+            }
+        </div>
+
+        @* --- SEKCE: AKTIVNÍ AUKCE --- *@
+        <h4 class="text-success mb-3"><i class="bi bi-play-circle"></i> Probíhající aukce</h4>
+        <div class="row mb-5">
+            @foreach (var a in myAuctions.Where(x => x.IsApproved && !x.IsDeleted && !IsExpired(x)))
+            {
+                <div class="col-md-4 mb-3">
+                    <div class="card border-success h-100 shadow-sm">
+                        @if (!string.IsNullOrEmpty(a.ImagePath))
+                        {
+                            <img src="@a.ImagePath" class="card-img-top" style="height: 150px; object-fit: cover;">
+                        }
+                        <div class="card-body">
+                            <h5 class="card-title">@a.Title</h5>
+                            <p class="mb-1"><strong>Aktuální cena: @a.CurrentPrice Kč</strong></p>
+                            <p class="text-muted small">Končí za: @GetRemainingTime(a)</p>
+                            <span class="badge bg-success">Status: Aktivní</span>
+                        </div>
+                        <div class="card-footer bg-transparent border-0">
+                            <a href="/auction/@a.Id" class="btn btn-sm btn-outline-primary w-100">Zobrazit detail</a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* --- SEKCE: UKONČENÉ NEBO ZAMÍTNUTÉ --- *@
+        <h4 class="text-secondary mb-3"><i class="bi bi-archive"></i> Historie a zamítnuté</h4>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Název</th>
+                        <th>Status</th>
+                        <th>Konečná cena</th>
+                        <th>Poznámka</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in myAuctions.Where(x => x.IsDeleted || (x.IsApproved && IsExpired(x))))
+                    {
+                        <tr class="@(a.IsDeleted ? "table-danger" : "")">
+                            <td>@a.Title</td>
+                            <td>
+                                @if (a.IsDeleted)
+                                {
+                                    <span class="badge bg-danger">Zamítnuto/Smazáno</span>
+                                }
+                                else
+                                {
+
+                                    <span class="badge bg-secondary">Ukončeno</span>
+                                }
+                            </td>
+                            <td>@a.CurrentPrice Kč</td>
+                            <td>
+                                @if (a.IsApproved && IsExpired(a))
+                                {
+                                    <span>Aukce vypršela @a.ApprovedAt.Value.AddHours(a.DurationHours).ToShortDateString()</span>
+                                }
+                                else if (a.IsDeleted)
+                                {
+
+                                    <span>Neschváleno supervizorem</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Auction>? myAuctions;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+
+        if (user != null)
+        {
+            myAuctions = await Context.Auctions
+                .Where(a => a.SellerId == user.Id)
+                .OrderByDescending(a => a.Id)
+                .ToListAsync();
+        }
+    }
+
+    private bool IsExpired(Auction a)
+    {
+        if (!a.ApprovedAt.HasValue) return false;
+        return a.ApprovedAt.Value.AddHours(a.DurationHours) < DateTime.Now;
+    }
+
+    private string GetRemainingTime(Auction a)
+    {
+        if (!a.ApprovedAt.HasValue) return "-";
+        var endTime = a.ApprovedAt.Value.AddHours(a.DurationHours);
+        var remaining = endTime - DateTime.Now;
+
+        if (remaining.TotalSeconds <= 0) return "Ukončeno";
+        return $"{(int)remaining.TotalDays}d {remaining.Hours}h {remaining.Minutes}m";
+    }
+}

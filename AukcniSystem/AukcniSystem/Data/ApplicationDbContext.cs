@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AukcniSystem.Data
 {
-    // POZOR: Musíš pøidat RoleIdentity a string jako klíè do definice IdentityDbContext
     public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : IdentityDbContext<ApplicationUser, IdentityRole, string>(options)
     {
@@ -13,11 +12,14 @@ namespace AukcniSystem.Data
         public DbSet<Category> Categories { get; set; }
         public DbSet<Bid> Bids { get; set; }
 
+        // --- TADY JE TEN ZÁPIS ---
+        public DbSet<BalanceRequest> BalanceRequests { get; set; }
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
 
-            // Konfigurace pro Bid (Pøíhoz)
+            // Konfigurace pro Bid
             builder.Entity<Bid>()
                 .HasOne(b => b.Auction)
                 .WithMany(a => a.Bids)
@@ -29,6 +31,13 @@ namespace AukcniSystem.Data
                 .WithMany()
                 .HasForeignKey(b => b.BidderId)
                 .OnDelete(DeleteBehavior.NoAction);
+
+            // Konfigurace pro BalanceRequest (aby smazání uživatele nesmazalo historii žádostí agresivnì)
+            builder.Entity<BalanceRequest>()
+                .HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Nastavení pøesnosti pro decimal
             foreach (var property in builder.Model.GetEntityTypes()

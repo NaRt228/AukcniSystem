@@ -1,0 +1,113 @@
+﻿@page "/admin/cleanup"
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+
+@inject ApplicationDbContext Context
+
+<PageTitle>Správa ukončených aukcí</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold text-danger"><i class="bi bi-trash3"></i> Čištění archivu</h3>
+        <span class="text-muted">Lhůta pro smazání: 14 dní od ukončení</span>
+    </div>
+
+    @if (auctionsToDelete == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-danger" role="status"></div>
+        </div>
+    }
+    else if (!auctionsToDelete.Any())
+    {
+        <div class="alert alert-info shadow-sm">
+            Aktuálně neexistují žádné aukce, které by splňovaly podmínku 14 dní od připsání peněz a ukončení.
+        </div>
+    }
+    else
+    {
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Název aukce</th>
+                            <th>Ukončeno dne</th>
+                            <th>Konečná cena</th>
+                            <th>Dní po lhůtě</th>
+                            <th class="text-end">Akce</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in auctionsToDelete)
+                        {
+                            var endDate = a.ApprovedAt!.Value.AddHours(a.DurationHours);
+                            var daysPast = (DateTime.Now - endDate.AddDays(14)).Days;
+
+                            <tr>
+                                <td class="text-muted">#@a.Id</td>
+                                <td class="fw-bold">@a.Title</td>
+                                <td>@endDate.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td class="text-success fw-bold">@a.CurrentPrice Kč</td>
+                                <td><span class="badge bg-danger">@daysPast dní</span></td>
+                                <td class="text-end">
+                                    <button class="btn btn-danger btn-sm" @onclick="() => DeleteAuction(a)">
+                                        <i class="bi bi-x-circle"></i> Definitivně smazat
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Auction>? auctionsToDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExpiredAuctions();
+    }
+
+    private async Task LoadExpiredAuctions()
+    {
+        // Definujeme časovou hranici: Teď minus 14 dní
+        var threshold = DateTime.Now.AddDays(-14);
+
+        // Hledáme aukce, které:
+        // 1. Jsou schválené
+        // 2. Nejsou ještě smazané (IsDeleted == false)
+        // 3. Čas konce (ApprovedAt + Duration) je menší než threshold
+        // 4. Mají alespoň jeden příhoz (podmínka "klient obdržel peníze")
+
+        var allApproved = await Context.Auctions
+            .Include(a => a.Bids)
+            .Where(a => a.IsApproved && !a.IsDeleted && a.Bids.Any())
+            .ToListAsync();
+
+        auctionsToDelete = allApproved
+            .Where(a => a.ApprovedAt.Value.AddHours(a.DurationHours) <= threshold)
+            .ToList();
+    }
+
+    private async Task DeleteAuction(Auction a)
+    {
+        // Podle zadání "Admin může aukci smazat" - v EF Core buď IsDeleted = true, nebo Remove
+        // My použijeme IsDeleted pro zachování integrity, ale v UI to zmizí
+        a.IsDeleted = true;
+
+        Context.Auctions.Update(a);
+        await Context.SaveChangesAsync();
+
+        await LoadExpiredAuctions();
+    }
+}

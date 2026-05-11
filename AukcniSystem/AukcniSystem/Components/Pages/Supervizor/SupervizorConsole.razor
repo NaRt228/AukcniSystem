@@ -1,0 +1,151 @@
+﻿@page "/supervisor/pending-auctions"
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+
+@attribute [Authorize(Roles = "Supervisor")]
+@rendermode InteractiveServer
+
+@inject ApplicationDbContext Context
+
+<PageTitle>Schvalování aukcí</PageTitle>
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Aukce čekající na schválení</h3>
+        <span class="badge bg-primary">Počet žádostí: @pendingAuctions.Count</span>
+    </div>
+
+    @if (pendingAuctions == null)
+    {
+        <p><em>Načítání...</em></p>
+    }
+    else if (!pendingAuctions.Any())
+    {
+        <div class="alert alert-success">
+            Všechny aukce byly vyřízeny. Žádné nové žádosti.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Náhled</th>
+                        <th>Název a Prodejce</th>
+                        <th>Cena</th>
+                        <th>Doba (h)</th>
+                        <th>Akce</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var auction in pendingAuctions)
+                    {
+                        <tr>
+                            <td>
+                                @if (!string.IsNullOrEmpty(auction.ImagePath))
+                                {
+                                    <img src="@auction.ImagePath" style="width: 60px; height: 60px; object-fit: cover;" class="rounded" />
+                                }
+                                else
+                                {
+                                    <div class="bg-light text-center rounded" style="width: 60px; height: 60px; line-height: 60px;">
+                                        <i class="bi bi-image text-muted"></i>
+                                    </div>
+                                }
+                            </td>
+                            <td>
+                                <strong>@auction.Title</strong><br />
+                                <small class="text-muted">Prodejce: @auction.Seller?.UserName</small><br />
+                                <small class="text-muted">Kategorie: @auction.Category?.Name</small>
+                            </td>
+                            <td>@auction.StartingPrice.ToString("N2") Kč</td>
+                            <td>@auction.DurationHours h</td>
+                            <td>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-success"
+                                            @onclick="() => ApproveAuction(auction)">
+                                        Schválit
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            @onclick="() => RejectAuction(auction)">
+                                        Zamítnout
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-info mt-3">
+            @statusMessage
+        </div>
+    }
+</div>
+
+@code {
+    private List<Auction> pendingAuctions = new();
+    private string statusMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAuctions();
+    }
+
+    private async Task LoadAuctions()
+    {
+        // Načteme aukce, které nejsou schválené a nejsou smazané
+        pendingAuctions = await Context.Auctions
+            .Include(a => a.Seller)
+            .Include(a => a.Category)
+            .Where(a => !a.IsApproved && !a.IsDeleted)
+            .OrderBy(a => a.Id)
+            .ToListAsync();
+    }
+
+    private async Task ApproveAuction(Auction auction)
+    {
+        try
+        {
+            auction.IsApproved = true;
+            auction.ApprovedAt = DateTime.Now; // Tímto okamžikem začíná běžet čas aukce
+
+            Context.Auctions.Update(auction);
+            await Context.SaveChangesAsync();
+
+            statusMessage = $"Aukce '{auction.Title}' byla schválena a spuštěna.";
+            await LoadAuctions();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Chyba při schvalování: {ex.Message}";
+        }
+    }
+
+    private async Task RejectAuction(Auction auction)
+    {
+        try
+        {
+            // Podle zadání Admin maže po 14 dnech, ale Supervisor může "zamítnout"
+            // tím, že aukci prostě smaže nebo označí jako smazanou hned.
+            auction.IsDeleted = true;
+
+            Context.Auctions.Update(auction);
+            await Context.SaveChangesAsync();
+
+            statusMessage = $"Aukce '{auction.Title}' byla zamítnuta a odstraněna.";
+            await LoadAuctions();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Chyba při zamítání: {ex.Message}";
+        }
+    }
+}

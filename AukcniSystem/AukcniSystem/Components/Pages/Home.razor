@@ -1,7 +1,153 @@
 ﻿@page "/"
+@using AukcniSystem.Data
+@using AukcniSystem.Entities
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Context
+@rendermode InteractiveServer
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Aukční portál - Top 10</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="container pb-5">
+    @* Hero sekce *@
+    <div class="p-5 mb-4 bg-light rounded-3 shadow-sm border-0" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+        <div class="container-fluid py-3">
+            <h1 class="display-5 fw-bold text-primary">Aukční Portál</h1>
+            <p class="col-md-8 fs-4 text-secondary">Objevte nejzajímavější nabídky, které končí právě dnes. Nepropásněte svou šanci!</p>
+            <div class="d-flex gap-2">
+                <a href="/new-auction" class="btn btn-primary btn-lg px-4 shadow-sm">Vytvořit aukci</a>
+                <a href="/categories" class="btn btn-outline-secondary btn-lg px-4">Prohlížet kategorie</a>
+            </div>
+        </div>
+    </div>
 
-Welcome to your new app.
+    <h2 class="mb-4 d-flex align-items-center">
+        <span class="badge bg-danger me-2">LIVE</span>
+        Top 10 aukcí končících dnes
+    </h2>
+
+    @if (topAuctions == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Načítám nejlepší nabídky...</p>
+        </div>
+    }
+    else if (!topAuctions.Any())
+    {
+        <div class="alert alert-light border shadow-sm p-5 text-center">
+            <i class="bi bi- megaphone fs-1 text-muted"></i>
+            <h4 class="mt-3">Dnes zatím žádné aukce nekončí</h4>
+            <p class="text-muted">Buďte první a založte novou aukci ještě dnes!</p>
+        </div>
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+            @foreach (var auction in topAuctions)
+            {
+                <div class="col">
+                    <div class="card h-100 shadow-sm border-0 hover-shadow transition">
+                        @* Obrázek s badge *@
+                        <div class="position-relative">
+                            <img src="@(string.IsNullOrEmpty(auction.ImagePath) ? "/images/no-image.png" : auction.ImagePath)"
+                                 class="card-img-top"
+                                 style="height: 220px; object-fit: cover;"
+                                 alt="@auction.Title">
+                            <div class="position-absolute top-0 end-0 m-2">
+                                <span class="badge bg-dark bg-opacity-75 p-2">
+                                    <i class="bi bi-tag-fill me-1"></i> @auction.Category?.Name
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold text-truncate">@auction.Title</h5>
+
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="text-muted small"><i class="bi bi-geo-alt"></i> @auction.Address</span>
+                                <span class="badge bg-light text-dark border">@auction.Bids.Count příhozů</span>
+                            </div>
+
+                            <div class="bg-light p-3 rounded-3 mb-3 text-center">
+                                <span class="text-muted small d-block">Aktuální cena</span>
+                                <span class="h4 fw-bold text-primary mb-0">@auction.CurrentPrice.ToString("N0") Kč</span>
+                            </div>
+
+                            @* Časovač a progress bar *@
+                            @{
+                                var timeLeft = GetTimeLeft(auction);
+                                var progress = GetProgress(auction);
+                            }
+                            <div class="mb-1 d-flex justify-content-between small fw-bold">
+                                <span>Zbývá: @timeLeft</span>
+                                <span>@progress%</span>
+                            </div>
+                            <div class="progress mb-3" style="height: 8px;">
+                                <div class="progress-bar @(progress > 80 ? "bg-danger" : "bg-warning")"
+                                     role="progressbar"
+                                     style="width: @progress%"></div>
+                            </div>
+                        </div>
+
+                        <div class="card-footer bg-white border-0 pb-3">
+                            <a href="/auction/@auction.Id" class="btn btn-outline-primary w-100 fw-bold">
+                                Přihodit nyní
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .hover-shadow:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 .5rem 1.5rem rgba(0,0,0,.1) !important;
+    }
+
+    .transition {
+        transition: all 0.3s ease-in-out;
+    }
+</style>
+
+@code {
+    private List<Auction>? topAuctions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTime.Now;
+        var endOfDay = now.Date.AddDays(1);
+
+        topAuctions = await Context.Auctions
+            .Include(a => a.Category)
+            .Include(a => a.Bids)
+            .Where(a => a.IsApproved && !a.IsDeleted)
+            // Aukce musí končit dnes (ApprovedAt + DurationHours je mezi teď a půlnocí)
+            .Where(a => a.ApprovedAt.Value.AddHours(a.DurationHours) > now &&
+                        a.ApprovedAt.Value.AddHours(a.DurationHours) <= endOfDay)
+            .OrderBy(a => a.ApprovedAt.Value.AddHours(a.DurationHours))
+            .Take(10)
+            .ToListAsync();
+    }
+
+    private string GetTimeLeft(Auction a)
+    {
+        var end = a.ApprovedAt.Value.AddHours(a.DurationHours);
+        var diff = end - DateTime.Now;
+        if (diff.TotalSeconds <= 0) return "Ukončeno";
+        return $"{(int)diff.TotalHours}h {diff.Minutes}m";
+    }
+
+    private int GetProgress(Auction a)
+    {
+        var start = a.ApprovedAt.Value;
+        var end = start.AddHours(a.DurationHours);
+        var total = (end - start).TotalSeconds;
+        var elapsed = (DateTime.Now - start).TotalSeconds;
+
+        var percent = (int)((elapsed / total) * 100);
+        return Math.Clamp(percent, 0, 100);
+    }
+}
